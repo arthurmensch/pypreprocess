@@ -922,7 +922,7 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
                 else: write_voxel_sizes = anat_write_voxel_sizes
                 apply_to_files = subject_data.anat
             # XXX replace by normalize12
-            print('%s - [DEFORMATION FILE] %s' % (brain_name, deformation_file))
+            # print('%s - [DEFORMATION FILE] %s' % (brain_name, deformation_file))
             print('%s - [APPLY TO FILE] %s' % (brain_name, apply_to_files))
             normalize_result = normalize(
                 deformation_file=deformation_file,
