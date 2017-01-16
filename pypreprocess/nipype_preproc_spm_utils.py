@@ -886,7 +886,7 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
             normalize = spm.Normalize12().run
 
     segmented = 'segment' in subject_data.nipype_results
-
+    print('this is %s' % spm_version)
     # configure node for normalization
     if not segmented:
         # learn T1 deformation without segmentation
@@ -921,8 +921,8 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
                 else: write_voxel_sizes = anat_write_voxel_sizes
                 apply_to_files = subject_data.anat
             # XXX replace by normalize12
-            print('[DEFORMATION FILE]', deformation_file)
-            print('[APPLY TO FILE]', apply_to_files)
+            print('%s - [DEFORMATION FILE] %s' % (brain_name, deformation_file))
+            print('%s - [APPLY TO FILE] %s' % (brain_name, apply_to_files))
             normalize_result = normalize(
                 deformation_file=deformation_file,
                 apply_to_files=apply_to_files,
@@ -1919,6 +1919,8 @@ def do_subjects_preproc(subject_factory, session_ids=None, **preproc_params):
             **preproc_params)
 
     # apply standard normalization after newsegment ?
+    # XXX should we need this ?
+    """
     if normalize and newsegment and not dartel:
         for stage in ["realign", "coregister", "slice_timing"]:
             preproc_params[stage] = False
@@ -1933,6 +1935,7 @@ def do_subjects_preproc(subject_factory, session_ids=None, **preproc_params):
         # final hard link
         for subject_data in subjects:
             subject_data.hardlink_output_files(final=True)
+    """
 
     finalize_report()
     return subjects
