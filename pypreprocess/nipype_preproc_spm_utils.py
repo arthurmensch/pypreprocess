@@ -897,10 +897,11 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
             write_preserve=False)
         parameter_file = normalize_result.outputs.normalization_parameters
     else:
-        parameter_file = subject_data.nipype_results[
-            'segment'].outputs.transformation_mat
-        deformation_file = subject_data.nipype_results[
-            'segment'].outputs.forward_deformation_field
+        seg_outputs = subject_data.nipype_results['segment'].outputs
+        if hasattr(seg_outputs, 'transformation_mat'):
+            parameter_file = seg_outputs.transformation_mat
+        if hasattr(seg_outputs, 'forward_deformation_field'):
+            deformation_file = seg_outputs.forward_deformation_field
 
     subject_data.parameter_file = parameter_file
 
