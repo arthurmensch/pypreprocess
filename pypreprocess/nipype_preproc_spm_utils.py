@@ -701,7 +701,7 @@ def _do_subject_newsegment(subject_data, output_modulated_tpms=True,
         New Attributes
         ==============
         subject_data.nipype_results['segment']: Nipype output object
-            (raw) result of running spm.Segment
+            (raw) result of running spm.NewSegment
 
         subject_data.gm: string
             path to subject's segmented gray matter image in native space
@@ -867,26 +867,35 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
     # sanitize subject_data (do things like .nii.gz -> .nii conversion, etc.)
     subject_data.sanitize(niigz2nii=(software == "spm"))
 
-    # XXX get spm version
-    spm_version = _get_version_spm(SPM_DIR)
+    # set segmentation flags to use either normalize or normalize12
+    # set segmentation flag
+    segmented = 'segment' in subject_data.nipype_results
+    newsegmented = False
+    if segmented:
+        newsegmented = hasattr(
+            subject_data.nipype_results['segment'].outputs,
+            'forward_deformation_field')
+
+    # normalize to epi when newsegment is used under spm8 :
+    # spm8 hasn't normalize12, newsegment hasn't a compatible transform_mat
+    if newsegmented and _get_version_spm(SPM_DIR) == 'spm8':
+        segmented = False
+        newsegmented = False
 
     # prepare for smart caching
     if caching:
         cache_dir = os.path.join(subject_data.scratch, 'cache_dir')
-        if not os.path.exists(cache_dir): os.makedirs(cache_dir)
-        if spm_version == 'spm8':
-            normalize = NipypeMemory(base_dir=cache_dir).cache(spm.Normalize)
-        elif spm_version == 'spm12':
-            normalize = NipypeMemory(base_dir=cache_dir).cache(spm.Normalize12)
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+        # use Normalize12 or Normalize according to NewSegment
+        normalize = (NipypeMemory(base_dir=cache_dir).cache(spm.Normalize12)
+                     if newsegmented else
+                     NipypeMemory(base_dir=cache_dir).cache(spm.Normalize))
     else:
-        # XXX normalize or normalize12
-        if spm_version == 'spm8':
-            normalize = spm.Normalize().run
-        elif spm_version == 'spm12':
-            normalize = spm.Normalize12().run
+        # use Normalize12 or Normalize according to NewSegment
+        normalize = (spm.Normalize12().run
+                     if newsegmented else spm.Normalize().run)
 
-    segmented = 'segment' in subject_data.nipype_results
-    print('this is %s' % spm_version)
     # configure node for normalization
     if not segmented:
         # learn T1 deformation without segmentation
@@ -897,47 +906,47 @@ def _do_subject_normalize(subject_data, fwhm=0., anat_fwhm=0., caching=True,
             write_preserve=False)
         parameter_file = normalize_result.outputs.normalization_parameters
     else:
-        seg_outputs = subject_data.nipype_results['segment'].outputs
-        if hasattr(seg_outputs, 'transformation_mat'):
-            parameter_file = seg_outputs.transformation_mat
-        if hasattr(seg_outputs, 'forward_deformation_field'):
-            deformation_file = seg_outputs.forward_deformation_field
+        segmentation_outputs = subject_data.nipype_results['segment'].outputs
+        parameter_file = segmentation_outputs.transformation_mat
+        # use deformation_file with NewSegment instead of parameter_file
+        if newsegmented:
+            deformation_file = segmentation_outputs.forward_deformation_field
 
     subject_data.parameter_file = parameter_file
 
     # do normalization proper
-    for brain_name, brain in zip(
-        ['anat', 'func'], [subject_data.anat, subject_data.func]):
-        if not brain: continue
+    for brain_name, brain in zip(['anat', 'func'],
+                                 [subject_data.anat, subject_data.func]):
+        if not brain:
+            continue
         if segmented:
             if brain_name == 'func':
                 apply_to_files, file_types = ravel_filenames(subject_data.func)
                 if func_write_voxel_sizes is None:
                     write_voxel_sizes = get_vox_dims(apply_to_files)
-                else: write_voxel_sizes = func_write_voxel_sizes
+                else:
+                    write_voxel_sizes = func_write_voxel_sizes
             else:
                 apply_to_files = subject_data.anat
                 if anat_write_voxel_sizes is None:
                     write_voxel_sizes = get_vox_dims(apply_to_files)
-                else: write_voxel_sizes = anat_write_voxel_sizes
+                else:
+                    write_voxel_sizes = anat_write_voxel_sizes
                 apply_to_files = subject_data.anat
-            # XXX replace by normalize12
-            # print('%s - [DEFORMATION FILE] %s' % (brain_name, deformation_file))
-            print('%s - [APPLY TO FILE] %s' % (brain_name, apply_to_files))
-            normalize_result = normalize(
-                deformation_file=deformation_file,
-                apply_to_files=apply_to_files,
-                write_voxel_sizes=list(write_voxel_sizes),
-                write_interp=1, jobtype='write', ignore_exception=False)
-            print('[RESULTS]', normalize_result.outputs)
-
-            # run node
-            # normalize_result = normalize(
-            #     parameter_file=parameter_file,
-            #     apply_to_files=apply_to_files,
-            #     write_voxel_sizes=list(write_voxel_sizes),
-            #     # write_bounding_box=[[-78, -112, -50], [78, 76, 85]],
-            #     write_interp=1, jobtype='write', ignore_exception=False)
+            # run normalize12 with NewSegment
+            if newsegmented:
+                normalize_result = normalize(
+                    deformation_file=deformation_file,
+                    apply_to_files=apply_to_files,
+                    write_voxel_sizes=list(write_voxel_sizes),
+                    write_interp=1, jobtype='write', ignore_exception=False)
+            else:
+            # run normalize with OldSegment
+                normalize_result = normalize(
+                    parameter_file=parameter_file,
+                    apply_to_files=apply_to_files,
+                    write_voxel_sizes=list(write_voxel_sizes),
+                    write_interp=1, jobtype='write', ignore_exception=False)
 
             # failed node ?
             if normalize_result.outputs is None:
@@ -1486,7 +1495,7 @@ def do_subject_preproc(
     # segmentation of anatomical image
     #####################################
     if segment:
-        # XXX newsegment goes here
+        # newsegment goes here
         if newsegment:
             subject_data = _do_subject_newsegment(
                 subject_data, caching=caching, normalize=normalize,
@@ -1553,8 +1562,7 @@ def _do_subjects_dartel(
         output_modulated_tpms=False, parent_results_gallery=None,
         **kwargs):
     """
-    Runs NewSegment + optionally Dartel and DartelNorm2MNI, on given subjects.
-
+    Runs Dartel and DartelNorm2MNI, on given subjects.
     """
     # configure SPM back-end
     _configure_backends(spm_dir=spm_dir, matlab_exec=matlab_exec,
@@ -1568,65 +1576,30 @@ def _do_subjects_dartel(
         os.makedirs(cache_dir)
     mem = NipypeMemory(base_dir=cache_dir)
 
-    # XXX put this in do_subject_newsegment
-    """
-    # create node
-    newsegment = mem.cache(spm.NewSegment)
-
-    # run node
-    newsegment_result = newsegment(
-        channel_files=[subject_data.anat for subject_data in subjects],
-        tissues=TISSUES,
-        ignore_exception=False)
-    if newsegment_result.outputs is None:
-        return
-    else:
-        # collect estimated TPMs
-        for j, sd in enumerate(subjects):
-            sd.parameter_file = newsegment_result.outputs.transformation_mat[j]
-            sd.gm = newsegment_result.outputs.native_class_images[0][j]
-            sd.wm = newsegment_result.outputs.native_class_images[1][j]
-            sd.csf = newsegment_result.outputs.native_class_images[2][j]
-            sd.nipype_results['newsegment'] = newsegment_result
-
-            # generate segmentation thumbs
-            if report:
-                sd.generate_segmentation_thumbnails()
-        if not do_dartel:
-            return subjects
-    """
-    # TODO check if newsegment was done properly
-    # TODO build newsegment_result properly
-    # for sd in subjects:
-        # print(sd.nipype_results['segment'].outputs.dartel_input_images)
-    # dartel_inputs = [
-        # sd.nipype_results['segment'].outputs.dartel_input_images
-        # for sd in subjects]
-
+    # prepare dartel input images
+    # it should be a list of subjects per tissue
+    # e.g. : [['rc1s1.nii', 'rc1s2.nii'], ['rc2s1.nii', 'rc2s2.nii']]
     dartel_input_images = []
-    for i in range(6):
+    # for each tissue
+    for i, _ in enumerate(TISSUES):
         tpm_subjects = []
+        # for each subject
         for sd in subjects:
             tpms = sd.nipype_results['segment'].outputs.dartel_input_images[i]
+            # collect each non-empty tpms
             if tpms:
                 tpm_subjects.extend(tpms)
+        # collect non-empty tpms of all subjects
         if tpm_subjects:
             dartel_input_images.append(tpm_subjects)
 
-    print(dartel_input_images)
-
     # compute DARTEL template for group data
     dartel = mem.cache(spm.DARTEL)
-    # dartel_input_images = [
-    #     tpms for tpms in newsegment_result.outputs.dartel_input_images if tpms]
-    # dartel_input_images = [tpms for tpms in dartel_inputs if tpms]
     dartel_result = dartel(image_files=dartel_input_images)
     if dartel_result.outputs is None:
         return
 
     for j, subject_data in enumerate(subjects):
-        # subject_data.gm = newsegment_result.outputs.dartel_input_images[0][j]
-        # subject_data.wm = newsegment_result.outputs.dartel_input_images[1][j]
         subject_data.dartel_flow_fields = dartel_result.outputs\
             .dartel_flow_fields[j]
 
@@ -1759,11 +1732,8 @@ def do_subjects_preproc(subject_factory, session_ids=None, **preproc_params):
         for subject_data in subjects:
             subject_data["session_ids"] = session_ids
 
-    # DARTEL or NewSegment on 1 subject is senseless
+    # DARTEL on 1 subject is senseless
     if len(subjects) < 2:
-        # TODO remove this
-        # if newsegment:
-            # warnings.warn("There is only one subject. Disabling NewSegment.")
         if dartel:
             warnings.warn("There is only one subject. Disabling DARTEL.")
             dartel = False
@@ -1890,7 +1860,6 @@ def do_subjects_preproc(subject_factory, session_ids=None, **preproc_params):
 
     normalize = preproc_params.get("normalize", True)
 
-    # XXX should we check this ?
     # don't yet segment nor normalize if dartel enabled
     if dartel:
         for stage in ["normalize", "last_stage"]:
@@ -1908,35 +1877,10 @@ def do_subjects_preproc(subject_factory, session_ids=None, **preproc_params):
 
     # run DARTEL
     preproc_params.update(backup_params)
-    # XXX replace by do_subjects_dartel
-    # if newsegment:
-    #     subjects = _do_subjects_newsegment(
-    #         subjects, scratch, n_jobs=n_jobs, do_dartel=dartel,
-    #         **preproc_params)
-
     if dartel:
         subjects = _do_subjects_dartel(
             subjects, scratch, n_jobs=n_jobs, do_dartel=dartel,
             **preproc_params)
-
-    # apply standard normalization after newsegment ?
-    # XXX should we need this ?
-    """
-    if normalize and newsegment and not dartel:
-        for stage in ["realign", "coregister", "slice_timing"]:
-            preproc_params[stage] = False
-        preproc_params["hardlink_output"] = True
-        for param in preproc_params.keys():
-            if param not in ["fwhm", "anat_fwhm", "func_write_voxel_sizes",
-                             "anat_write_voxel_sizes", "caching", "report",
-                             "hardlink_output", "smooth_software"]:
-                preproc_params.pop(param)
-        subjects = Parallel(n_jobs=n_jobs)(delayed(_do_subject_normalize)(
-            subject_data, **preproc_params) for subject_data in subjects)
-        # final hard link
-        for subject_data in subjects:
-            subject_data.hardlink_output_files(final=True)
-    """
 
     finalize_report()
     return subjects
