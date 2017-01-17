@@ -670,9 +670,9 @@ def _do_subject_segment(subject_data, output_modulated_tpms=True, spm_dir=None,
     return subject_data.sanitize()
 
 
-def _do_subject_newsegment(subject_data, output_modulated_tpms=True,
+def _do_subject_newsegment(subject_data,
                            spm_dir=None, matlab_exec=None, spm_mcr=None,
-                           normalize=False, caching=True, report=True,
+                           caching=True, report=True,
                            software="spm", hardlink_output=True):
     """
     Wrapper for running spm.NewSegment with optional reporting.
@@ -686,16 +686,8 @@ def _do_subject_newsegment(subject_data, output_modulated_tpms=True,
         subject data whose anatomical image (subject_data.anat) is to be
         segmented
 
-    output_modulated_tpms: bool, optional (default False)
-        if set, then modulated TPMS will be produced (alongside unmodulated
-        TPMs); this can be useful for VBM
-
     caching: bool, optional (default True)
         if true, then caching will be enabled
-
-    normalize: bool, optional (default False)
-        flag indicating whether warped brain compartments (gm, wm, csf) are to
-        be generated (necessary if the caller wishes the brain later)
 
     report: bool, optional (default True)
        flag controlling whether post-preprocessing reports should be generated
@@ -761,15 +753,6 @@ def _do_subject_newsegment(subject_data, output_modulated_tpms=True,
     else:
         segment = spm.NewSegment().run
 
-    # configure node
-    if not normalize:
-        gm_output_type = [False, False, True]
-        wm_output_type = [False, False, True]
-        csf_output_type = [False, False, True]
-    else:
-        gm_output_type = [output_modulated_tpms, True, True]
-        wm_output_type = [output_modulated_tpms, True, True]
-        csf_output_type = [output_modulated_tpms, True, True]
     # run node
     segment_result = segment(
         channel_files=subject_data.anat,
@@ -792,10 +775,10 @@ def _do_subject_newsegment(subject_data, output_modulated_tpms=True,
     subject_data.gm = segment_result.outputs.native_class_images[0][0]
     subject_data.wm = segment_result.outputs.native_class_images[1][0]
     subject_data.csf = segment_result.outputs.native_class_images[2][0]
-    if normalize:
-        subject_data.mwgm = segment_result.outputs.modulated_class_images[0][0]
-        subject_data.mwwm = segment_result.outputs.modulated_class_images[1][0]
-        subject_data.mwcsf = segment_result.outputs.modulated_class_images[2][0]
+
+    subject_data.mwgm = segment_result.outputs.modulated_class_images[0][0]
+    subject_data.mwwm = segment_result.outputs.modulated_class_images[1][0]
+    subject_data.mwcsf = segment_result.outputs.modulated_class_images[2][0]
 
     # commit output files
     if hardlink_output:
@@ -1505,7 +1488,7 @@ def do_subject_preproc(
         # newsegment goes here
         if newsegment:
             subject_data = _do_subject_newsegment(
-                subject_data, caching=caching, normalize=normalize,
+                subject_data, caching=caching,
                 report=report, hardlink_output=hardlink_output)
         else:
             subject_data = _do_subject_segment(
