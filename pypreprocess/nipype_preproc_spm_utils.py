@@ -73,6 +73,13 @@ def _configure_backends(spm_dir=None, matlab_exec=None, spm_mcr=None,
                 tissue_path = 'toolbox/Seg'
 
             # prepare template TPMs
+            # Each tissue contains the following fields:
+            # - tissue probability map (4D), 1-based index to frame
+            # - number of gaussians
+            # - which maps to save [Native, DARTEL] - a tuple of two boolean
+            # values
+            # - which maps to save [Unmodulated, Modulated] - a tuple of two
+            # boolean values
             tissue1 = ((os.path.join(SPM_DIR, tissue_path, 'TPM.nii'), 1),
                        2, (True, True), (True, True))
             tissue2 = ((os.path.join(SPM_DIR, tissue_path, 'TPM.nii'), 2),
