@@ -1,0 +1,15 @@
+#*
+*~
+*.pyc
+*.nii*
+*.img
+*.hdr
+*.exe
+*.exe
+*.o
+*.so
+*.a
+
+.idea/
+.idea/workspace.xml
+.coverage
