@@ -13,3 +13,6 @@
 .idea/
 .idea/workspace.xml
 .coverage
+
+build/
+configure_spm.log
